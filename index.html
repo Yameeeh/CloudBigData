@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kleidungsempfehlung</title>
+</head>
+<body>
+    <h1>Kleidungsempfehlung</h1>
+    <form id="locationForm">
+        <label for="latitude">Breitengrad:</label>
+        <input type="text" id="latitude" name="latitude" required>
+        <label for="longitude">Längengrad:</label>
+        <input type="text" id="longitude" name="longitude" required>
+        <button type="submit">Empfehlung erhalten</button>
+    </form>
+    <div id="recommendation"></div>
+
+    <script>
+        document.getElementById('locationForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const latitude = document.getElementById('latitude').value;
+            const longitude = document.getElementById('longitude').value;
+
+            fetch(`http://localhost:8080/recommendation?latitude=${latitude}&longitude=${longitude}`)
+                .then(response => response.json())
+                .then(data => {
+                document.getElementById('recommendation').innerText = data.recommendation;
+                })
+                .catch(error => {
+                    console.error('Fehler bei der Anfrage:', error);
+                });
+        });
+    </script>
+</body>
+</html>
