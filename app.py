@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import requests
 from datetime import datetime, timedelta
@@ -12,7 +12,7 @@ firestore_available = False
 try:
     from google.cloud import firestore
     # Setze die Umgebungsvariable für den Service-Account-Schlüssel
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "firebase-key.json"  # Pfad zur JSON-Datei
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "firebase-key.json"
     db = firestore.Client()
     firestore_available = True
 except Exception as e:
@@ -21,21 +21,35 @@ except Exception as e:
 def get_weather_from_api(latitude, longitude):
     """Holt stündliche Wetterdaten von der Open-Meteo API."""
     url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&hourly=apparent_temperature,rain&forecast_days=1"
-    response = requests.get(url)
-    return response.json()
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching weather data from Open-Meteo: {e}")
+        return None
 
 def save_weather_to_firestore(latitude, longitude, weather_data):
-    """Speichert Wetterdaten in Firestore, falls verfügbar."""
+    """Speichert Wetterdaten in Firestore und stellt sicher, dass sie gespeichert wurden, bevor sie abgerufen werden."""
     if firestore_available:
         doc_ref = db.collection('weather_cache').document(f"{latitude}_{longitude}")
         doc_ref.set({
             'latitude': latitude,
             'longitude': longitude,
             'hourly_data': weather_data['hourly'],
-            'timestamp': datetime.utcnow()  # Aktueller Zeitstempel
+            'timestamp': datetime.utcnow()
         })
-    else:
-        print("Firestore ist nicht verfügbar. Daten werden nicht gespeichert.")
+
+        # Ensure the write is finished before proceeding
+        retries = 3
+        for _ in range(retries):
+            doc = doc_ref.get()
+            if doc.exists:
+                print(f"[INFO] Firestore data successfully saved for {latitude}, {longitude}")
+                return
+            print("[WARN] Firestore write not finished, retrying...")
+        
+        print("[ERROR] Firestore data did not save properly!")
 
 def get_weather_from_firestore(latitude, longitude):
     """Holt Wetterdaten aus Firestore, falls verfügbar."""
@@ -43,62 +57,102 @@ def get_weather_from_firestore(latitude, longitude):
         doc_ref = db.collection('weather_cache').document(f"{latitude}_{longitude}")
         doc = doc_ref.get()
         if doc.exists:
+            # Log the retrieved data to inspect its structure
+            print(f"Retrieved data from Firestore: {doc.to_dict()}")
             return doc.to_dict()
     return None
 
 def get_recommendation(hourly_data):
     """Generiert eine Kleidungsempfehlung basierend auf den stündlichen Wetterdaten."""
-    apparent_temperatures = hourly_data['apparent_temperature']
-    rain = hourly_data['rain']
-    timestamps = hourly_data['time']
+    if hourly_data is None:
+        return "Fehler bei der Verarbeitung der Wetterdaten."
 
-    # Betrachte die nächsten 12 Stunden
-    relevant_temperatures = apparent_temperatures[:12]
-    relevant_rain = rain[:12]
+    try:
+        apparent_temperatures = hourly_data['apparent_temperature']
+        rain = hourly_data['rain']
+        timestamps = hourly_data['time']
 
-    # Durchschnittliche gefühlte Temperatur und maximale Regenmenge in den nächsten 12 Stunden
-    avg_apparent_temperature = sum(relevant_temperatures) / len(relevant_temperatures)
-    max_rain = max(relevant_rain)
+        # Betrachte die nächsten 12 Stunden
+        relevant_temperatures = apparent_temperatures[:12]
+        relevant_rain = rain[:12]
 
-    # Empfehlung basierend auf der gefühlten Temperatur
-    if avg_apparent_temperature < 10:
-        temp_recommendation = "Ziehen Sie sich warm an."
-    else:
-        temp_recommendation = "Sie können sich leicht anziehen."
+        avg_apparent_temperature = sum(relevant_temperatures) / len(relevant_temperatures)
+        max_rain = max(relevant_rain)
 
-    # Empfehlung basierend auf Regen
-    if max_rain >= 2:
-        rain_recommendation = "Nehmen Sie einen Regenschirm mit."
-    elif 0 < max_rain < 2:
-        rain_recommendation = "Leichter Regen unter 2mm. Regenschirm empfohlen"
-    else:
-        rain_recommendation = "Es regnet nicht, kein Schirm nötig."
+        if avg_apparent_temperature < 10:
+            temp_recommendation = "Ziehen Sie sich warm an."
+        else:
+            temp_recommendation = "Sie können sich leicht anziehen."
 
-    return f"{temp_recommendation} {rain_recommendation}"
+        if max_rain >= 2:
+            rain_recommendation = "Nehmen Sie einen Regenschirm mit."
+        elif 0 < max_rain < 2:
+            rain_recommendation = "Leichter Regen unter 2mm. Regenschirm empfohlen."
+        else:
+            rain_recommendation = "Es regnet nicht, kein Schirm nötig."
+
+        return f"{temp_recommendation} {rain_recommendation}"
+    except Exception as e:
+        print(f"Error generating recommendation: {e}")
+        return "Fehler bei der Empfehlung. Überprüfen Sie die Daten."
+
+@app.route('/')
+def index():
+    """Serve the homepage (index.html)."""
+    return render_template('index.html')
 
 @app.route('/recommendation', methods=['GET'])
 def recommendation():
     """Hauptendpunkt für die Kleidungsempfehlung."""
-    latitude = request.args.get('latitude')
-    longitude = request.args.get('longitude')
+    try:
+        latitude = request.args.get('latitude')
+        longitude = request.args.get('longitude')
 
-    if not latitude or not longitude:
-        return jsonify({"error": "Breitengrad und Längengrad sind erforderlich."}), 400
+        if not latitude or not longitude:
+            return jsonify({"error": "Breitengrad und Längengrad sind erforderlich."}), 400
 
-    # Überprüfe, ob die Daten bereits in Firestore gespeichert sind
-    cached_weather = get_weather_from_firestore(latitude, longitude)
+        # Prüfe, ob die Daten bereits in Firestore sind
+        cached_weather = get_weather_from_firestore(latitude, longitude)
 
-    if cached_weather:
-        # Verwende die zwischengespeicherten Daten
-        weather_data = cached_weather
-    else:
-        # Hole die Daten von der API und speichere sie in Firestore
-        weather_data = get_weather_from_api(latitude, longitude)
-        save_weather_to_firestore(latitude, longitude, weather_data)
+        if cached_weather:
+            print("[INFO] Using cached weather data.")
+            weather_data = cached_weather
+        else:
+            print("[INFO] No cache found. Fetching from API.")
+            weather_data = get_weather_from_api(latitude, longitude)
 
-    # Generiere die Kleidungsempfehlung
-    recommendation = get_recommendation(weather_data['hourly'])
-    return jsonify({"recommendation": recommendation})
+            if weather_data and "hourly" in weather_data:
+                save_weather_to_firestore(latitude, longitude, weather_data)
+
+                # Sicherstellen, dass Firestore die Daten gespeichert hat
+                for _ in range(3):  # Maximal 3 Versuche
+                    cached_weather = get_weather_from_firestore(latitude, longitude)
+                    if cached_weather:
+                        print("[INFO] Successfully retrieved saved data from Firestore.")
+                        weather_data = cached_weather
+                        break
+                    print("[WARN] Firestore write not finished, retrying...")
+
+                if not cached_weather:
+                    print("[ERROR] Firestore did not save weather data properly.")
+                    return jsonify({"error": "Fehler beim Speichern der Wetterdaten."}), 500
+
+            else:
+                print("[ERROR] Could not fetch weather data from API.")
+                return jsonify({"error": "Wetterdaten konnten nicht abgerufen werden."}), 500
+
+        # Prüfen, ob "hourly_data" existiert
+        if "hourly_data" not in weather_data:
+            print("[ERROR] Weather data missing 'hourly_data' key.")
+            return jsonify({"error": "Ungültige Wetterdaten."}), 500
+
+        # Generiere die Kleidungsempfehlung
+        recommendation = get_recommendation(weather_data['hourly_data'])
+        return jsonify({"recommendation": recommendation})
+
+    except Exception as e:
+        print(f"[ERROR] Serverfehler: {e}")
+        return jsonify({"error": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut."}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=8080)
