@@ -6,14 +6,14 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)  # CORS aktivieren
 
-# Versuche, Firestore zu initialisieren, aber fahre fort, wenn es nicht verfügbar ist
+# Firestore-Client initialisieren (nur wenn Anmeldeinformationen verfügbar sind)
+firestore_available = False
 try:
     from google.cloud import firestore
     db = firestore.Client()
     firestore_available = True
-except ImportError:
-    firestore_available = False
-    print("Firestore ist nicht verfügbar. Die Anwendung wird ohne Caching ausgeführt.")
+except Exception as e:
+    print(f"Firestore ist nicht verfügbar: {e}. Die Anwendung wird ohne Firestore ausgeführt.")
 
 def get_weather_from_api(latitude, longitude):
     """Holt Wetterdaten von der Open-Meteo API."""
@@ -70,21 +70,15 @@ def recommendation():
     if not latitude or not longitude:
         return jsonify({"error": "Breitengrad und Längengrad sind erforderlich."}), 400
 
-    # Überprüfe, ob die Daten bereits in Firestore gespeichert sind
-    cached_weather = get_weather_from_firestore(latitude, longitude)
+    # Hole die Daten von der API
+    weather_data = get_weather_from_api(latitude, longitude)
 
-    if cached_weather:
-        # Verwende die zwischengespeicherten Daten
-        weather_data = cached_weather
-    else:
-        # Hole die Daten von der API
-        weather_data = get_weather_from_api(latitude, longitude)
-        # Speichere die Daten in Firestore, falls verfügbar
-        save_weather_to_firestore(latitude, longitude, weather_data['current_weather'])
+    # Speichere die Daten in Firestore, falls verfügbar
+    save_weather_to_firestore(latitude, longitude, weather_data['current_weather'])
 
     # Generiere die Kleidungsempfehlung
-    recommendation = get_recommendation(weather_data['current_weather'] if not cached_weather else cached_weather)
+    recommendation = get_recommendation(weather_data['current_weather'])
     return jsonify({"recommendation": recommendation})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)

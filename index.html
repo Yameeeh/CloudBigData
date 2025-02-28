@@ -22,7 +22,7 @@
             const latitude = document.getElementById('latitude').value;
             const longitude = document.getElementById('longitude').value;
 
-            fetch(`http://localhost:8080/recommendation?latitude=${latitude}&longitude=${longitude}`)
+            fetch(`http://localhost:5001/recommendation?latitude=${latitude}&longitude=${longitude}`)
                 .then(response => response.json())
                 .then(data => {
                 document.getElementById('recommendation').innerText = data.recommendation;
