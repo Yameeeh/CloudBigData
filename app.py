@@ -36,7 +36,7 @@ def save_weather_to_firestore(latitude, longitude, weather_data):
         doc_ref.set({
             'latitude': latitude,
             'longitude': longitude,
-            'hourly': weather_data['hourly'],
+            'hourly_data': weather_data['hourly'],
             'timestamp': datetime.utcnow()
         })
 
@@ -62,15 +62,15 @@ def get_weather_from_firestore(latitude, longitude):
             return doc.to_dict()
     return None
 
-def get_recommendation(hourly):
+def get_recommendation(hourly_data):
     """Generiert eine Kleidungsempfehlung basierend auf den stündlichen Wetterdaten."""
-    if hourly is None:
+    if hourly_data is None:
         return "Fehler bei der Verarbeitung der Wetterdaten."
 
     try:
-        apparent_temperatures = hourly['apparent_temperature']
-        rain = hourly['rain']
-        timestamps = hourly['time']
+        apparent_temperatures = hourly_data['apparent_temperature']
+        rain = hourly_data['rain']
+        timestamps = hourly_data['time']
 
         # Betrachte die nächsten 12 Stunden
         relevant_temperatures = apparent_temperatures[:12]
@@ -141,13 +141,13 @@ def recommendation():
                 print("[ERROR] Could not fetch weather data from API.")
                 return jsonify({"error": "Wetterdaten konnten nicht abgerufen werden."}), 500
 
-        # Prüfen, ob "hourly" existiert
-        if "hourly" not in weather_data:
-            print("[ERROR] Weather data missing 'hourly' key.")
+        # Prüfen, ob "hourly_data" existiert
+        if "hourly_data" not in weather_data:
+            print("[ERROR] Weather data missing 'hourly_data' key.")
             return jsonify({"error": "Ungültige Wetterdaten."}), 500
 
         # Generiere die Kleidungsempfehlung
-        recommendation = get_recommendation(weather_data['hourly'])
+        recommendation = get_recommendation(weather_data['hourly_data'])
         return jsonify({"recommendation": recommendation})
 
     except Exception as e:
