@@ -19,6 +19,9 @@ Thumbs.db
 # Log files
 *.log
 
+#API-Key
+firebase-key.json
+
 # SQLite database files
 *.sqlite3
 *.db
