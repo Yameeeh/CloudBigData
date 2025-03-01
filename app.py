@@ -113,6 +113,9 @@ def recommendation():
         except (TypeError, ValueError):
             return jsonify({"error": "Breitengrad und Längengrad müssen gültige Zahlen sein."}), 400
 
+        if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+            return jsonify({"recommendation": "Breitengrad muss zwischen -90 und +90 liegen, Längengrad zwischen -180 und +180."})
+
         # Prüfe, ob die Daten bereits in Firestore sind
         cached_weather = get_weather_from_firestore(latitude, longitude)
 
@@ -160,8 +163,6 @@ def recommendation():
         error_details = traceback.format_exc()
         print(f"[ERROR] Serverfehler: {e}\n{error_details}")
         return jsonify({"error": f"Serverfehler: {str(e)}"}), 500
-
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
