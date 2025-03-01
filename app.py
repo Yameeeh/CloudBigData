@@ -3,9 +3,10 @@ from flask_cors import CORS
 import requests
 from datetime import datetime, timedelta
 import os
+import time
 
 app = Flask(__name__)
-CORS(app)  # CORS aktivieren
+CORS(app)
 
 # Firebase-Konfiguration
 firestore_available = False
@@ -36,7 +37,7 @@ def save_weather_to_firestore(latitude, longitude, weather_data):
         doc_ref.set({
             'latitude': latitude,
             'longitude': longitude,
-            'hourly_data': weather_data['hourly'],
+            'hourly_data': weather_data['hourly_data'],
             'timestamp': datetime.utcnow()
         })
 
@@ -121,7 +122,7 @@ def recommendation():
             print("[INFO] No cache found. Fetching from API.")
             weather_data = get_weather_from_api(latitude, longitude)
 
-            if weather_data and "hourly" in weather_data:
+            if weather_data and ("hourly_data" or "hourly") in weather_data:
                 save_weather_to_firestore(latitude, longitude, weather_data)
 
                 # Sicherstellen, dass Firestore die Daten gespeichert hat
@@ -132,6 +133,7 @@ def recommendation():
                         weather_data = cached_weather
                         break
                     print("[WARN] Firestore write not finished, retrying...")
+                    time.sleep(1)
 
                 if not cached_weather:
                     print("[ERROR] Firestore did not save weather data properly.")
