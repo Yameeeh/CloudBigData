@@ -111,7 +111,7 @@ def recommendation():
             latitude = float(request.args.get('latitude'))
             longitude = float(request.args.get('longitude'))
         except (TypeError, ValueError):
-            return jsonify({"error": "Breitengrad und Längengrad müssen gültige Zahlen sein."}), 400
+            return jsonify({"recommendation": "Breitengrad und Längengrad müssen gültige Zahlen sein."}), 400
 
         if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
             return jsonify({"recommendation": "Breitengrad muss zwischen -90 und +90 liegen, Längengrad zwischen -180 und +180."})
@@ -126,10 +126,9 @@ def recommendation():
             print("[INFO] No cache found. Fetching from API.")
             weather_data = get_weather_from_api(latitude, longitude)
 
-            if weather_data and "hourly" in weather_data:  # Fix für Open-Meteo API
-                weather_data["hourly_data"] = weather_data["hourly"]  # Konsistenz
+            if weather_data and "hourly" in weather_data:
+                weather_data["hourly_data"] = weather_data["hourly"]
                 save_weather_to_firestore(latitude, longitude, weather_data)
-                time.sleep(1)  # Warten auf Firestore-Speicherung
 
                 # Sicherstellen, dass Firestore die Daten gespeichert hat
                 cached_weather = None
@@ -144,15 +143,15 @@ def recommendation():
 
                 if not cached_weather:
                     print("[ERROR] Firestore did not save weather data properly.")
-                    return jsonify({"error": "Fehler beim Speichern der Wetterdaten."}), 500
+                    return jsonify({"recommendation": "Fehler beim Speichern der Wetterdaten."}), 500
             else:
                 print("[ERROR] Could not fetch weather data from API.")
-                return jsonify({"error": "Wetterdaten konnten nicht abgerufen werden."}), 500
+                return jsonify({"recommendation": "Wetterdaten konnten nicht abgerufen werden."}), 500
 
         # Prüfen, ob "hourly_data" existiert
         if "hourly_data" not in weather_data:
             print(f"[ERROR] Weather data missing 'hourly_data' key: {weather_data}")
-            return jsonify({"error": "Ungültige Wetterdaten."}), 500
+            return jsonify({"recommendation": "Ungültige Wetterdaten."}), 500
 
         # Generiere die Kleidungsempfehlung
         recommendation = get_recommendation(weather_data['hourly_data'])
@@ -162,7 +161,7 @@ def recommendation():
         import traceback
         error_details = traceback.format_exc()
         print(f"[ERROR] Serverfehler: {e}\n{error_details}")
-        return jsonify({"error": f"Serverfehler: {str(e)}"}), 500
+        return jsonify({"recommendation": f"Serverfehler: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
